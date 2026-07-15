@@ -1,53 +1,38 @@
 import streamlit as st
-import json
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
-import io
-import os  # 👈 여기에 os 라이브러리가 다시 추가되었습니다!
+import requests
+import base64
+import os
 
 # ==========================================
-# 1. 환경 설정 및 구글 드라이브 폴더 ID
+# 1. 환경 설정 (Secrets에서 앱스 스크립트 URL 가져오기)
 # ==========================================
-GOOGLE_DRIVE_FOLDER_ID = st.secrets["GOOGLE_DRIVE_FOLDER_ID"]
+APPS_SCRIPT_URL = st.secrets["APPS_SCRIPT_URL"]
 
 # ==========================================
-# 2. 구글 인증 및 업로드 함수
+# 2. 업로드 함수 (서비스 계정 없이 다이렉트 전송)
 # ==========================================
-@st.cache_resource
-def get_google_creds():
-    try:
-        creds_dict = json.loads(st.secrets["GCP_CREDENTIALS"])
-        scope = ["https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-        return creds
-    except Exception as e:
-        st.error(f"구글 인증 실패: {e}")
-        return None
-
 def upload_file_to_drive(file_name, file_bytes, mime_type):
-    creds = get_google_creds()
-    if creds:
-        try:
-            service = build('drive', 'v3', credentials=creds)
+    try:
+        # 파일을 텍스트(Base64)로 변환하여 전송 준비
+        encoded_data = base64.b64encode(file_bytes).decode('utf-8')
+        payload = {
+            "fileName": file_name,
+            "mimeType": mime_type,
+            "fileData": encoded_data
+        }
+        
+        # 구글 드라이브(앱스 스크립트)로 발송!
+        response = requests.post(APPS_SCRIPT_URL, data=payload)
+        result = response.json()
 
-            file_metadata = {
-                'name': file_name,
-                'parents': [GOOGLE_DRIVE_FOLDER_ID]
-            }
-
-            media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime_type, resumable=True)
-            uploaded_file = service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id'
-            ).execute()
-
-            return uploaded_file.get('id')
-        except Exception as e:
-            st.error(f"구글 드라이브 전송 실패: {e}")
-    return None
-
+        if result.get("status") == "success":
+            return result.get("fileId")
+        else:
+            st.error(f"업로드 실패: {result.get('message')}")
+            return None
+    except Exception as e:
+        st.error(f"전송 중 오류 발생: {e}")
+        return None
 
 # ==========================================
 # 3. Streamlit 웹 UI 구성
@@ -74,7 +59,7 @@ st.markdown("---")
 
 st.subheader("📁 활동 사진 및 동영상 첨부")
 uploaded_files = st.file_uploader(
-    "여기에 사진이나 동영상을 올려주세요 (다중 선택 및 드래그 가능)",
+    "여기에 사진이나 동영상을 올려주세요 (다중 선택 가능)",
     type=["jpg", "jpeg", "png", "mp4", "mov"],
     accept_multiple_files=True
 )
@@ -88,24 +73,21 @@ if uploaded_files:
         success_count = 0
 
         for index, file in enumerate(uploaded_files):
-            # 파일 이름 규칙 조립 (이제 NameError 없이 잘 작동합니다!)
             _, ext = os.path.splitext(file.name)
             formatted_name = f"[{grade}_{class_num}_{teacher_name}] {event_name}_{index + 1}{ext}"
 
-            # 업로드
             file_bytes = file.read()
             file_id = upload_file_to_drive(formatted_name, file_bytes, file.type)
 
             if file_id:
                 success_count += 1
 
-            # 진행 바
             progress_ratio = float((index + 1) / len(uploaded_files))
             my_bar.progress(progress_ratio,
                             text=f"전송 진행률: {int(progress_ratio * 100)}% ({index + 1}/{len(uploaded_files)})")
 
         if success_count == len(uploaded_files):
             st.balloons()
-            st.success("🎉 전송 완료!")
+            st.success("🎉 전송 완료! 마스터 드라이브에 안전하게 저장되었습니다!")
         else:
             st.warning(f"일부 파일 실패: {success_count}/{len(uploaded_files)}")
