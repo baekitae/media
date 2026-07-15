@@ -4,40 +4,31 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 import io
+import os  # 👈 여기에 os 라이브러리가 다시 추가되었습니다!
 
 # ==========================================
 # 1. 환경 설정 및 구글 드라이브 폴더 ID
 # ==========================================
-# 스트림릿 Secrets에서 ID를 가져오는 것이 보안상 안전합니다.
 GOOGLE_DRIVE_FOLDER_ID = st.secrets["GOOGLE_DRIVE_FOLDER_ID"]
 
 # ==========================================
-# 2. 구글 인증 및 업로드 함수 (Secrets 방식 수정 완료)
+# 2. 구글 인증 및 업로드 함수
 # ==========================================
 @st.cache_resource
 def get_google_creds():
     try:
-        # 1. 스트림릿 Secrets에서 JSON 문자열을 가져옵니다.
         creds_dict = json.loads(st.secrets["GCP_CREDENTIALS"])
-        
-        # 2. 필요한 스코프 설정
-        scope = [
-            "https://www.googleapis.com/auth/drive"
-        ]
-        
-        # 3. 인증 객체 생성
+        scope = ["https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         return creds
     except Exception as e:
         st.error(f"구글 인증 실패: {e}")
         return None
 
-# 구글 드라이브 API를 사용해 파일을 전송하는 함수
 def upload_file_to_drive(file_name, file_bytes, mime_type):
     creds = get_google_creds()
     if creds:
         try:
-            # 드라이브 v3 서비스 객체 생성
             service = build('drive', 'v3', credentials=creds)
 
             file_metadata = {
@@ -97,7 +88,7 @@ if uploaded_files:
         success_count = 0
 
         for index, file in enumerate(uploaded_files):
-            # 파일 이름 규칙 조립
+            # 파일 이름 규칙 조립 (이제 NameError 없이 잘 작동합니다!)
             _, ext = os.path.splitext(file.name)
             formatted_name = f"[{grade}_{class_num}_{teacher_name}] {event_name}_{index + 1}{ext}"
 
